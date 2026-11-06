@@ -121,6 +121,16 @@ textarea { resize: none; }
 .time { font-variant-numeric: tabular-nums; font-weight: 700; }
 .layers { display: flex; gap: 8px; flex-wrap: wrap; }
 .fontgroups { display: grid; gap: 10px; }
+.hist { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.hcard { flex: none; width: 112px; display: grid; gap: 6px; }
+.hcard button.thumb { padding: 0; border: 2px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--stage); }
+.hcard button.thumb:hover { border-color: var(--brand); }
+.hcard canvas { display: block; width: 108px; height: 135px; }
+.hcard b { font-size: 12.5px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hcard small { color: var(--muted); font-size: 11px; display: block; }
+.hcard .acts { display: flex; gap: 4px; }
+.hcard .acts button { flex: 1; border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px; padding: 4px 0; font-size: 12px; font-weight: 700; }
+.hcard .acts button.on { color: var(--gold-ink); background: var(--gold); border-color: var(--gold); }
 .fontrow { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
 .fontrow .choice { flex: none; font-size: 17px; padding: 6px 12px; line-height: 1.2; }
 .fontrow .choice small { font-family: var(--font); }
@@ -167,6 +177,7 @@ textarea { resize: none; }
     <button class="tab" role="tab" data-tab="size">Ukuran</button>
     <button class="tab" role="tab" data-tab="text">Teks</button>
     <button class="tab" role="tab" data-tab="logo">Logo</button>
+    <button class="tab" role="tab" data-tab="history">Riwayat</button>
     <button class="tab" role="tab" data-tab="video" id="videoTab" hidden>Video</button>
   </nav>
 
@@ -272,6 +283,22 @@ textarea { resize: none; }
       <span class="lbl">Posisi</span>
       <div class="choices" id="logoPositions"></div>
       <p class="note">Logo PNG berlatar transparan memberi hasil paling rapi. Logo yang dipilih diingat untuk foto berikutnya.</p>
+    </div>
+
+    <!-- RIWAYAT -->
+    <div class="panel" data-panel="history" hidden>
+      <div class="row">
+        <input class="inp fill" id="histName" maxlength="40" placeholder="Nama, misal: Promo Jumat" aria-label="Nama watermark">
+        <button class="btn solid" id="histSave">Simpan</button>
+      </div>
+      <label class="toggle"><input type="checkbox" id="histLook" checked> Ikut simpan filter &amp; warna</label>
+      <label class="toggle"><input type="checkbox" id="histAuto"> Pasang watermark terakhir otomatis saat aplikasi dibuka</label>
+      <span class="lbl">Tersimpan</span>
+      <div class="hist" id="histFav"></div>
+      <p class="note" id="histFavEmpty">Belum ada. Atur teks dan logo, beri nama, lalu ketuk Simpan.</p>
+      <span class="lbl">Terakhir dipakai (otomatis saat menyimpan foto/video)</span>
+      <div class="hist" id="histRecent"></div>
+      <p class="note" id="histRecentEmpty">Watermark yang dipakai saat menyimpan hasil akan muncul di sini.</p>
     </div>
 
     <!-- VIDEO -->
@@ -679,10 +706,10 @@ function outline(ctx, w, h, W) {
   ctx.strokeStyle = "#f2b705"; ctx.strokeRect(-w / 2 - 4, -h / 2 - 4, w + 8, h + 8); ctx.setLineDash([]);
 }
 function isLight(hex) { const n = parseInt(hex.slice(1), 16); return (.299 * (n >> 16 & 255) + .587 * (n >> 8 & 255) + .114 * (n & 255)) > 150; }
-function logoBox(W) { const L = S.logo, img = L.img; const w = L.size * W; return { w, h: w * img.height / img.width }; }
-function drawLogo(ctx, W, H, selected) {
-  const L = S.logo; if (!L.on || !L.img) return;
-  const b = logoBox(W);
+function logoBox(W, L = S.logo) { const img = L.img; const w = L.size * W; return { w, h: w * img.height / img.width }; }
+function drawLogo(ctx, W, H, selected, L = S.logo) {
+  if (!L.on || !L.img) return;
+  const b = logoBox(W, L);
   ctx.save(); ctx.translate(L.x * W, L.y * H);
   ctx.globalAlpha = L.opacity; ctx.drawImage(L.img, -b.w / 2, -b.h / 2, b.w, b.h); ctx.globalAlpha = 1;
   if (selected) outline(ctx, b.w, b.h, W);
@@ -922,7 +949,7 @@ function renderThumbs() {
   S.filter = keep; S.filterStrength = keepS; [S.format, S.fit, S.zoom, S.panX, S.panY] = keepZ;
   thumbsDirty = false;
 }
-bindSlider("filterStrength", () => S.filterStrength * 100, v => S.filterStrength = v / 100);
+const syncFilterStrength = bindSlider("filterStrength", () => S.filterStrength * 100, v => S.filterStrength = v / 100);
 
 /* ---------------- Atur ---------------- */
 const adjustSyncs = [];
@@ -1306,6 +1333,7 @@ function b64Chunks(blob, onChunk) {
   });
 }
 async function deliver(blob, name, mime, meta) {
+  recordHistory();
   const url = URL.createObjectURL(blob), isVid = mime.startsWith("video");
   if (NATIVE && NATIVE.saveBegin) {
     dlg("Menyimpan ke galeri…", meta, 0);
@@ -1355,12 +1383,136 @@ $("saveBtn").onclick = () => {
 };
 $("modal").addEventListener("click", e => { if (e.target === $("modal") && !exporting) closeDlg(); });
 
+/* ---------------- Riwayat watermark ---------------- */
+// Disimpan di perangkat (localStorage). Logo sendiri disimpan sekali per gambar (logos), riwayat hanya menyimpan kuncinya.
+const HIST_MAX_RECENT = 12;
+const logoImgCache = {};
+function hashStr(str) { let h = 0; for (let i = 0; i < str.length; i += Math.max(1, Math.floor(str.length / 4000))) h = (h * 31 + str.charCodeAt(i)) | 0; return "L" + (h >>> 0).toString(36) + str.length.toString(36); }
+function logoKeyNow() {
+  if (!S.logo.custom) return null;
+  const key = hashStr(S.logo.custom), logos = store.get("logos", {});
+  if (!logos[key]) { logos[key] = S.logo.custom; store.set("logos", logos); }
+  return key;
+}
+function snapshot(withLook) {
+  const d = {
+    texts: S.texts.map(({ id, ...t }) => t),
+    logo: { on: S.logo.on, x: S.logo.x, y: S.logo.y, size: S.logo.size, opacity: S.logo.opacity, key: logoKeyNow() },
+  };
+  if (withLook) d.look = { filter: S.filter, filterStrength: S.filterStrength, manual: { ...S.manual }, autoOn: S.autoOn, autoStrength: S.autoStrength };
+  return d;
+}
+const sigOf = d => JSON.stringify({ t: d.texts, l: d.logo });
+function histList() { return store.get("history", []); }
+function histSave(list) {
+  // batasi jumlah riwayat otomatis, lalu buang logo yang tidak dipakai lagi
+  const fav = list.filter(h => h.fav), rec = list.filter(h => !h.fav).sort((a, b) => b.t - a.t).slice(0, HIST_MAX_RECENT);
+  list = [...fav, ...rec];
+  store.set("history", list);
+  const used = new Set(list.map(h => h.data.logo.key).filter(Boolean)); if (S.logo.custom) used.add(hashStr(S.logo.custom));
+  const logos = store.get("logos", {}); let changed = false;
+  for (const k in logos) if (!used.has(k)) { delete logos[k]; changed = true; }
+  if (changed) store.set("logos", logos);
+  renderHistory();
+}
+function autoName(d) {
+  const t = d.texts.find(x => x.text.trim());
+  return t ? t.text.replace(/\s+/g, " ").trim().slice(0, 28) : (d.logo.on ? "Logo saja" : "Tanpa teks");
+}
+function recordHistory() {
+  if (!S.texts.length && !S.logo.on) return;
+  const d = snapshot(true), sig = sigOf(d), list = histList();
+  const same = list.find(h => sigOf(h.data) === sig);
+  if (same) { same.t = Date.now(); same.uses = (same.uses || 1) + 1; if (!same.fav) same.data = d; }
+  else list.push({ id: "h" + Date.now().toString(36), name: autoName(d), fav: false, t: Date.now(), uses: 1, data: d });
+  store.set("lastWatermark", d);
+  histSave(list);
+}
+function saveFavorite() {
+  if (!S.texts.length && !S.logo.on) { toast("Tambahkan teks atau logo dulu"); return; }
+  const d = snapshot($("histLook").checked), name = $("histName").value.trim() || autoName(d), list = histList();
+  const same = list.find(h => sigOf(h.data) === sigOf(d));
+  if (same) { same.fav = true; same.name = name; same.data = d; same.t = Date.now(); }
+  else list.push({ id: "h" + Date.now().toString(36), name, fav: true, t: Date.now(), uses: 0, data: d });
+  $("histName").value = ""; histSave(list); toast(`"${name}" tersimpan`);
+}
+function getLogoImg(key) {
+  if (!key) return Promise.resolve(defaultLogo());
+  if (logoImgCache[key]) return logoImgCache[key];
+  const src = store.get("logos", {})[key];
+  logoImgCache[key] = new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+  return logoImgCache[key];
+}
+async function applyHistory(h) {
+  const d = h.data;
+  S.texts = d.texts.map(t => ({ ...t, id: uid++ }));
+  Object.assign(S.logo, { on: d.logo.on, x: d.logo.x, y: d.logo.y, size: d.logo.size, opacity: d.logo.opacity });
+  const src = d.logo.key ? store.get("logos", {})[d.logo.key] : null;
+  S.logo.custom = src || null; store.set("logoData", S.logo.custom); store.set("logoOn", S.logo.on);
+  S.logo.img = await getLogoImg(src ? d.logo.key : null) || defaultLogo();
+  $("logoOn").checked = S.logo.on; saveLogoPrefs(); syncLogo.forEach(f => f());
+  if (d.look) {
+    S.filter = d.look.filter; S.filterStrength = d.look.filterStrength; S.manual = { ...zeroAdj(), ...d.look.manual };
+    S.autoStrength = d.look.autoStrength;
+    if (d.look.autoOn) computeAuto();
+    setAuto(!!d.look.autoOn);
+    [...$("filters").children].forEach((x, i) => x.setAttribute("aria-pressed", FILTERS[i][0] === S.filter));
+    syncFilterStrength(); adjustSyncs.forEach(f => f()); $("autoStrength").value = S.autoStrength * 100; $("autoStrengthOut").textContent = Math.round(S.autoStrength * 100);
+  }
+  select(null);
+  await Promise.all(S.texts.map(ensureFont));
+  thumbsDirty = true; draw();
+}
+async function drawHistThumb(c, d) {
+  const x = c.getContext("2d"), W = c.width, H = c.height;
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#5b4636"); g.addColorStop(1, "#22301f");
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  await Promise.all(d.texts.map(t => ensureFont(t)));
+  const img = d.logo.on ? await getLogoImg(d.logo.key) : null;
+  if (img) drawLogo(x, W, H, false, { ...d.logo, img });
+  d.texts.forEach(t => drawText(x, t, W, H, false));
+}
+function renderHistory() {
+  const list = histList();
+  const fill = (box, items, empty) => {
+    box.innerHTML = ""; $(empty).hidden = items.length > 0;
+    items.forEach(h => {
+      const card = document.createElement("div"); card.className = "hcard";
+      const tb = document.createElement("button"); tb.className = "thumb"; tb.title = "Pakai " + h.name;
+      const c = document.createElement("canvas"); c.width = 216; c.height = 270; tb.appendChild(c);
+      tb.onclick = () => { applyHistory(h).then(() => toast(`Memakai "${h.name}"`)); };
+      const meta = document.createElement("div");
+      const when = new Date(h.t), look = h.data.look && h.data.look.filter !== "none" ? " · " + ((FILTERS.find(f => f[0] === h.data.look.filter) || [, ""])[1]) : "";
+      meta.innerHTML = `<b></b><small>${when.toLocaleDateString("id-ID", { day: "numeric", month: "short" })}${h.uses ? " · " + h.uses + "×" : ""}${look}</small>`;
+      meta.querySelector("b").textContent = h.name;
+      const acts = document.createElement("div"); acts.className = "acts";
+      const fav = document.createElement("button"); fav.textContent = h.fav ? "★" : "☆"; fav.className = h.fav ? "on" : ""; fav.title = h.fav ? "Lepas dari Tersimpan" : "Simpan ke Tersimpan";
+      fav.onclick = () => { const L = histList(), x = L.find(y => y.id === h.id); if (x) { x.fav = !x.fav; histSave(L); } };
+      const del = document.createElement("button"); del.textContent = "Hapus"; del.title = "Hapus dari riwayat";
+      del.onclick = () => { if (del.dataset.sure) histSave(histList().filter(y => y.id !== h.id)); else { del.dataset.sure = 1; del.textContent = "Yakin?"; setTimeout(() => { del.dataset.sure = ""; del.textContent = "Hapus"; }, 2500); } };
+      acts.append(fav, del);
+      card.append(tb, meta, acts); box.appendChild(card);
+      drawHistThumb(c, h.data);
+    });
+  };
+  fill($("histFav"), list.filter(h => h.fav).sort((a, b) => b.t - a.t), "histFavEmpty");
+  fill($("histRecent"), list.filter(h => !h.fav).sort((a, b) => b.t - a.t), "histRecentEmpty");
+}
+function buildHistory() {
+  $("histSave").onclick = saveFavorite;
+  $("histName").addEventListener("keydown", e => { if (e.key === "Enter") saveFavorite(); });
+  $("histAuto").checked = store.get("histAuto", true);
+  $("histAuto").onchange = e => store.set("histAuto", e.target.checked);
+  renderHistory();
+}
+
 /* ---------------- start ---------------- */
-buildFilters(); buildAdjust(); buildSize(); buildText(); buildLogo(); buildVideo();
+buildFilters(); buildAdjust(); buildSize(); buildText(); buildLogo(); buildVideo(); buildHistory();
 S.media = { kind: "image", el: sample(), w: 1440, h: 1800, name: "contoh" };
 setMedia(S.media);
-addText("MENU BARU", TEMPLATES[0][1]);
-S.texts[0].y = .1;
+const lastWM = store.get("lastWatermark", null);
+if (lastWM && store.get("histAuto", true)) applyHistory({ data: lastWM });
+else { addText("MENU BARU", TEMPLATES[0][1]); S.texts[0].y = .1; }
 showTab("enhance");
 select(null);
 if (document.fonts) document.fonts.ready.then(() => { if (!S.logo.custom) loadLogoImage(); draw(); });
