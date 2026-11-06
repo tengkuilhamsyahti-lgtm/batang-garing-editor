@@ -202,8 +202,10 @@ textarea { resize: none; }
 
     <!-- UKURAN -->
     <div class="panel" data-panel="size" hidden>
-      <span class="lbl">Ukuran postingan</span>
+      <span class="lbl">Platform</span>
+      <div class="catbar" id="platforms"></div>
       <div class="choices" id="formats"></div>
+      <label class="toggle" id="safeRow"><input type="checkbox" id="showSafe" checked> Tampilkan area aman (tidak ikut tersimpan)</label>
       <span class="lbl">Jika foto tidak pas</span>
       <div class="choices" id="fits"></div>
       <div id="bgRow" class="row" hidden>
@@ -354,13 +356,58 @@ const FILTERS = [
   ["noir", "Noir", "mono", { saturation: -1, contrast: .6, exposure: -.05, vignette: .5, grain: .3, sharpness: .3 }],
 ];
 const FILTER_CATS = [["all", "Semua"], ["kopi", "Kopi & Makanan"], ["suasana", "Suasana"], ["gaya", "Gaya"], ["mono", "Hitam Putih"]];
+// Ukuran resmi tiap platform (piksel). safe = bagian yang tertutup tombol/teks aplikasi (perkiraan, pecahan dari tinggi/lebar).
+const SAFE_STORY = { t: .13, b: .2, l: 0, r: 0 }, SAFE_REELS = { t: .12, b: .3, l: 0, r: .14 }, SAFE_TIKTOK = { t: .1, b: .3, l: 0, r: .15 };
 const FORMATS = [
-  ["orig", "Asli", "sesuai file", 0],
-  ["1:1", "1:1", "Feed kotak", 1],
-  ["4:5", "4:5", "Feed Instagram", 4 / 5],
-  ["9:16", "9:16", "Story, Reels, TikTok", 9 / 16],
-  ["16:9", "16:9", "YouTube, layar lebar", 16 / 9],
+  { id: "ig-portrait", p: "instagram", n: "Feed potret", w: 1080, h: 1350, use: "paling direkomendasikan untuk feed" },
+  { id: "ig-square", p: "instagram", n: "Feed kotak", w: 1080, h: 1080 },
+  { id: "ig-grid", p: "instagram", n: "Feed 3:4 (grid profil)", w: 1080, h: 1440, use: "pas dengan tampilan grid profil" },
+  { id: "ig-land", p: "instagram", n: "Feed lanskap", w: 1080, h: 566 },
+  { id: "ig-story", p: "instagram", n: "Story", w: 1080, h: 1920, safe: SAFE_STORY },
+  { id: "ig-reels", p: "instagram", n: "Reels", w: 1080, h: 1920, safe: SAFE_REELS },
+  { id: "ig-reels-cover", p: "instagram", n: "Sampul Reels", w: 1080, h: 1920, safe: { t: .16, b: .16, l: 0, r: 0 }, use: "tengahnya tampil di grid" },
+  { id: "ig-profile", p: "instagram", n: "Foto profil", w: 1080, h: 1080, circle: true },
+  { id: "fb-portrait", p: "facebook", n: "Post potret", w: 1080, h: 1350 },
+  { id: "fb-square", p: "facebook", n: "Post kotak", w: 1080, h: 1080 },
+  { id: "fb-land", p: "facebook", n: "Post lanskap / tautan", w: 1200, h: 630 },
+  { id: "fb-story", p: "facebook", n: "Story", w: 1080, h: 1920, safe: SAFE_STORY },
+  { id: "fb-reels", p: "facebook", n: "Reels", w: 1080, h: 1920, safe: SAFE_REELS },
+  { id: "fb-cover", p: "facebook", n: "Sampul halaman", w: 1640, h: 624, safe: { t: 0, b: 0, l: .12, r: .12 }, use: "tepi kiri-kanan terpotong di HP" },
+  { id: "fb-event", p: "facebook", n: "Sampul acara", w: 1920, h: 1005 },
+  { id: "fb-profile", p: "facebook", n: "Foto profil", w: 720, h: 720, circle: true },
+  { id: "tt-video", p: "tiktok", n: "Video / foto", w: 1080, h: 1920, safe: SAFE_TIKTOK },
+  { id: "tt-photo", p: "tiktok", n: "Mode foto (carousel)", w: 1080, h: 1440 },
+  { id: "tt-land", p: "tiktok", n: "Lanskap", w: 1920, h: 1080 },
+  { id: "tt-profile", p: "tiktok", n: "Foto profil", w: 720, h: 720, circle: true },
+  { id: "wa-status", p: "whatsapp", n: "Status", w: 1080, h: 1920, safe: { t: .1, b: .14, l: 0, r: 0 } },
+  { id: "wa-catalog", p: "whatsapp", n: "Katalog produk", w: 1080, h: 1080 },
+  { id: "wa-profile", p: "whatsapp", n: "Foto profil", w: 640, h: 640, circle: true },
+  { id: "yt-thumb", p: "youtube", n: "Thumbnail", w: 1280, h: 720 },
+  { id: "yt-shorts", p: "youtube", n: "Shorts", w: 1080, h: 1920, safe: SAFE_REELS },
+  { id: "yt-video", p: "youtube", n: "Video", w: 1920, h: 1080 },
+  { id: "yt-banner", p: "youtube", n: "Banner channel", w: 2560, h: 1440, safe: { t: .35, b: .35, l: .27, r: .27 }, use: "teks & logo di area tengah" },
+  { id: "food-menu", p: "pesanantar", n: "Foto menu", w: 1080, h: 1080, use: "GoFood, GrabFood, ShopeeFood" },
+  { id: "food-banner", p: "pesanantar", n: "Banner promo", w: 1200, h: 675 },
+  { id: "gmaps", p: "google", n: "Foto Google Maps", w: 1200, h: 900, use: "profil bisnis di Google" },
+  { id: "gmaps-post", p: "google", n: "Postingan bisnis", w: 1200, h: 900 },
+  { id: "x-post", p: "x", n: "Post", w: 1600, h: 900 },
+  { id: "x-header", p: "x", n: "Header profil", w: 1500, h: 500 },
+  { id: "pin", p: "pinterest", n: "Pin", w: 1000, h: 1500 },
+  { id: "li-post", p: "linkedin", n: "Post", w: 1200, h: 1200 },
+  { id: "orig", p: "lainnya", n: "Ukuran asli", w: 0, h: 0, use: "sesuai file" },
+  { id: "r-1-1", p: "lainnya", n: "Kotak 1:1", w: 1080, h: 1080 },
+  { id: "r-4-5", p: "lainnya", n: "Potret 4:5", w: 1080, h: 1350 },
+  { id: "r-3-4", p: "lainnya", n: "Potret 3:4", w: 1080, h: 1440 },
+  { id: "r-2-3", p: "lainnya", n: "Potret 2:3", w: 1080, h: 1620 },
+  { id: "r-9-16", p: "lainnya", n: "Vertikal 9:16", w: 1080, h: 1920 },
+  { id: "r-4-3", p: "lainnya", n: "Lanskap 4:3", w: 1440, h: 1080 },
+  { id: "r-16-9", p: "lainnya", n: "Lanskap 16:9", w: 1920, h: 1080 },
+  { id: "a4", p: "lainnya", n: "Cetak A4 (poster/menu)", w: 2480, h: 3508, use: "300 dpi" },
 ];
+const PLATFORMS = [["instagram", "Instagram"], ["facebook", "Facebook"], ["tiktok", "TikTok"], ["whatsapp", "WhatsApp"], ["youtube", "YouTube"],
+  ["pesanantar", "GoFood / GrabFood"], ["google", "Google Maps"], ["x", "X / Twitter"], ["pinterest", "Pinterest"], ["linkedin", "LinkedIn"], ["lainnya", "Lainnya"]];
+const fmt = () => FORMATS.find(f => f.id === S.format) || FORMATS[0];
+const ratioText = (w, h) => { const g = (a, b) => b ? g(b, a % b) : a, d = g(w, h); const r = `${w / d}:${h / d}`; return (w / d <= 25 && h / d <= 25) ? r : (w >= h ? (w / h).toFixed(2) + ":1" : "1:" + (h / w).toFixed(2)); };
 const PALETTE = ["#ffffff", "#f3f6e9", "#e8d5b5", "#1d6b45", "#5ccf8e", "#f2b705", "#c8501e", "#e85d75", "#3d8bfd", "#8a5a34", "#5a3a22", "#13211a"];
 // key: [nama, font-family, ketebalan, kategori, gaya miring?]
 const FONTS = {
@@ -414,7 +461,7 @@ const S = {
   sample: true,
   manual: zeroAdj(), auto: zeroAdj(), autoOn: false, autoStrength: .8,
   filter: "none", filterStrength: 1,
-  format: store.get("format", "4:5"), fit: "cover", bg: "blur", zoom: 1, panX: 0, panY: 0,
+  format: FORMATS.some(f => f.id === store.get("format", "")) ? store.get("format", "") : "ig-portrait", showSafe: true, fit: "cover", bg: "blur", zoom: 1, panX: 0, panY: 0,
   texts: [], selected: null,
   logo: { on: store.get("logoOn", true), img: null, custom: store.get("logoData", null), x: .86, y: .9, size: .16, opacity: .92 },
   video: { start: 0, end: 0, sound: true, res: store.get("videoRes", 1080) },
@@ -512,9 +559,9 @@ function params(original) {
 
 /* ---------------- geometry ---------------- */
 function frameAspect() {
-  const f = FORMATS.find(x => x[0] === S.format);
-  if (!f || !f[3]) return S.media ? S.media.w / S.media.h : 4 / 5;
-  return f[3];
+  const f = fmt();
+  if (!f.w) return S.media ? S.media.w / S.media.h : 4 / 5;
+  return f.w / f.h;
 }
 function geo(W, H) {
   const m = S.media;
@@ -646,6 +693,29 @@ function renderTo(ctx, W, H, opts = {}) {
   drawBase(ctx, W, H, opts);
   drawLogo(ctx, W, H, opts.ui && S.selected === "logo");
   S.texts.forEach(t => drawText(ctx, t, W, H, opts.ui && S.selected === t.id));
+  if (opts.ui && S.showSafe && !opts.original) drawGuides(ctx, W, H);
+}
+// panduan di layar saja (tidak ikut tersimpan): area tertutup tombol aplikasi & lingkaran foto profil
+function drawGuides(ctx, W, H) {
+  const f = fmt();
+  ctx.save();
+  if (f.circle) {
+    ctx.fillStyle = "rgba(0,0,0,.45)"; ctx.beginPath(); ctx.rect(0, 0, W, H);
+    ctx.arc(W / 2, H / 2, Math.min(W, H) / 2, 0, Math.PI * 2, true); ctx.fill("evenodd");
+  }
+  const sf = f.safe;
+  if (sf) {
+    ctx.fillStyle = "rgba(200,80,30,.22)";
+    const bands = [[0, 0, W, H * sf.t], [0, H * (1 - sf.b), W, H * sf.b], [0, 0, W * sf.l, H], [W * (1 - sf.r), 0, W * sf.r, H]];
+    bands.forEach(([x, y, w, h]) => { if (w > 0 && h > 0) ctx.fillRect(x, y, w, h); });
+    ctx.setLineDash([W * .015, W * .01]); ctx.lineWidth = Math.max(1, W * .003); ctx.strokeStyle = "rgba(255,255,255,.8)";
+    ctx.strokeRect(W * sf.l, H * sf.t, W * (1 - sf.l - sf.r), H * (1 - sf.t - sf.b));
+    ctx.setLineDash([]);
+    ctx.font = `700 ${Math.round(W * .03)}px ${FONTS.sans[1]}`; ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.textAlign = "center";
+    ctx.font = `700 ${Math.round(Math.max(W * .032, 9))}px ${FONTS.sans[1]}`; ctx.textBaseline = "top";
+    ctx.fillText("AREA AMAN", W * (sf.l + (1 - sf.l - sf.r) / 2), H * sf.t + W * .015);
+  }
+  ctx.restore();
 }
 
 /* ---------------- preview ---------------- */
@@ -844,7 +914,7 @@ function buildFilters() {
 function renderThumbs() {
   if (!thumbsDirty || !S.media || $("filters").offsetParent === null) return;
   const keep = S.filter, keepS = S.filterStrength, keepZ = [S.format, S.fit, S.zoom, S.panX, S.panY];
-  S.format = "1:1"; S.fit = "cover"; S.zoom = 1; S.panX = S.panY = 0; S.filterStrength = 1;
+  S.format = "r-1-1"; S.fit = "cover"; S.zoom = 1; S.panX = S.panY = 0; S.filterStrength = 1;
   FILTERS.forEach(([id]) => {
     S.filter = id; const c = thumbCanvases[id], x = c.getContext("2d");
     drawBase(x, c.width, c.height, {});
@@ -870,8 +940,19 @@ $("resetAdjust").onclick = () => { S.manual = zeroAdj(); adjustSyncs.forEach(f =
 /* ---------------- Ukuran ---------------- */
 let syncSize = () => {};
 function buildSize() {
-  choiceButtons($("formats"), FORMATS.map(f => ({ value: f[0], html: `${f[1]}<small>${f[2]}</small>` })), v => S.format === v,
-    v => { S.format = v; store.set("format", v); S.panX = S.panY = 0; updateInfo(); layout(); });
+  let plat = fmt().p;
+  const pick = v => { S.format = v; store.set("format", v); S.panX = S.panY = 0; syncSafe(); updateInfo(); layout(); };
+  const showFormats = () => choiceButtons($("formats"), FORMATS.filter(f => f.p === plat).map(f => ({
+    value: f.id, html: `${f.n}<small>${f.w ? `${f.w}×${f.h} · ${ratioText(f.w, f.h)}` : "sesuai file"}${f.use ? " · " + f.use : ""}</small>` })),
+    v => S.format === v, pick);
+  choiceButtons($("platforms"), PLATFORMS.map(([v, n]) => ({ value: v, html: n })), v => plat === v, v => {
+    plat = v; showFormats();
+    if (fmt().p !== v) pick(FORMATS.find(f => f.p === v).id), showFormats();
+  }, "cat");
+  showFormats();
+  const syncSafe = () => { const f = fmt(); $("safeRow").hidden = !(f.safe || f.circle); };
+  $("showSafe").onchange = e => { S.showSafe = e.target.checked; draw(); };
+  syncSafe();
   choiceButtons($("fits"), [{ value: "cover", html: "Penuhi bingkai<small>bagian tepi terpotong</small>" }, { value: "contain", html: "Tampil utuh<small>tambah latar</small>" }],
     v => S.fit === v, v => { S.fit = v; $("bgRow").hidden = v !== "contain"; S.panX = S.panY = 0; draw(); });
   swatches($("bgSwatches"), v => S.bg === v, v => { S.bg = v; draw(); },
@@ -1034,9 +1115,9 @@ function togglePlay() {
 /* ---------------- load media ---------------- */
 function updateInfo() {
   const m = S.media; if (!m) return;
-  const f = FORMATS.find(x => x[0] === S.format);
+  const f = fmt(), plat = (PLATFORMS.find(p => p[0] === f.p) || ["", ""])[1];
   const kind = S.sample ? "CONTOH FOTO" : m.kind === "video" ? "VIDEO" : "FOTO";
-  $("info").textContent = `${kind} · ${f[0] === "orig" ? "ukuran asli" : f[1] + " " + f[2]}`;
+  $("info").textContent = `${kind} · ${f.id === "orig" ? "ukuran asli" : (f.p === "lainnya" ? "" : plat + " ") + f.n + " · " + f.w + "×" + f.h}`;
 }
 function setMedia(m) {
   if (S.media && S.media.kind === "video") { S.media.el.pause(); }
@@ -1141,14 +1222,13 @@ function sample() {
 /* ---------------- export ---------------- */
 let exporting = false;
 function outSize(isVideo) {
-  const A = frameAspect(), m = S.media;
-  let short = isVideo ? S.video.res : 1080;
-  if (S.format === "orig" && !isVideo) { const k = Math.min(1, 4096 / Math.max(m.w, m.h)); return [Math.round(m.w * k), Math.round(m.h * k)]; }
-  if (S.format === "orig") short = Math.min(short, Math.min(m.w, m.h));
-  let w, h;
-  if (A >= 1) { h = short; w = short * A; } else { w = short; h = short / A; }
-  const even = x => Math.max(2, Math.round(x / 2) * 2);
-  return [even(w), even(h)];
+  const f = fmt(), m = S.media, even = x => Math.max(2, Math.round(x / 2) * 2);
+  let w = f.w, h = f.h;
+  if (!w) { const k = Math.min(1, 4096 / Math.max(m.w, m.h)); w = m.w * k; h = m.h * k; }
+  if (!isVideo) return [Math.round(w), Math.round(h)];
+  // video: sisi pendek mengikuti pilihan 720p/1080p, sisi panjang maksimal 1920 (batas encoder HP)
+  const k = Math.min(1, S.video.res / Math.min(w, h), 1920 / Math.max(w, h));
+  return [even(w * k), even(h * k)];
 }
 const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
 
