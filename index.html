@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#1d6b45">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Caveat:wght@600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Montserrat:wght@900&family=Poppins:wght@800&family=Bebas+Neue&family=Anton&family=Oswald:wght@700&family=Archivo+Black&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Playfair+Display:ital,wght@0,800;1,700&family=DM+Serif+Display&family=Cormorant+Garamond:ital,wght@1,700&family=Abril+Fatface&family=Caveat:wght@600;700&family=Pacifico&family=Dancing+Script:wght@700&family=Kaushan+Script&family=Satisfy&family=Permanent+Marker&family=Amatic+SC:wght@700&family=Lobster&family=Righteous&family=Bungee&family=Fredoka:wght@700&family=Shrikhand&family=Monoton&display=swap">
 <style>
 /* Layout: one-screen editor. Phone: bar / stage / tool tabs / tool sheet stacked. Wide: stage left, tools right. */
 :root {
@@ -129,6 +129,13 @@ textarea { resize: none; }
 .toggle input { width: 20px; height: 20px; accent-color: var(--brand); }
 .time { font-variant-numeric: tabular-nums; font-weight: 700; }
 .layers { display: flex; gap: 8px; flex-wrap: wrap; }
+.fontgroups { display: grid; gap: 10px; }
+.fontrow { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.fontrow .choice { flex: none; font-size: 17px; padding: 6px 12px; line-height: 1.2; }
+.fontrow .choice small { font-family: var(--font); }
+.catbar { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.cat { flex: none; border: 1.5px solid var(--line); background: transparent; border-radius: 999px; padding: 5px 12px; font-weight: 700; font-size: 12.5px; color: var(--muted); }
+.cat[aria-pressed="true"] { border-color: var(--brand); color: var(--fg); background: var(--brand-soft); }
 
 /* modal */
 .modal { position: fixed; inset: 0; background: rgba(4,10,6,.75); display: grid; place-items: center; z-index: 30; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
@@ -188,6 +195,7 @@ textarea { resize: none; }
 
     <!-- FILTER -->
     <div class="panel" data-panel="filter" hidden>
+      <div class="catbar" id="filterCats"></div>
       <div class="filters" id="filters"></div>
       <div class="slider">
         <label for="filterStrength">Kekuatan filter</label><output id="filterStrengthOut">100</output>
@@ -226,17 +234,24 @@ textarea { resize: none; }
       <div id="textEditor" class="panel" hidden>
         <div class="row"><span class="lbl fill">Teks terpilih</span><button class="btn small danger" id="deleteText">Hapus</button></div>
         <textarea id="textValue" rows="2" aria-label="Isi teks"></textarea>
+        <span class="lbl">Gaya tulisan</span>
         <div class="choices" id="textStyles"></div>
-        <div class="choices" id="textFonts"></div>
+        <span class="lbl">Jenis huruf</span>
+        <div class="catbar" id="fontCats"></div>
+        <div class="fontrow" id="textFonts"></div>
         <span class="lbl">Warna teks</span>
         <div class="swatches" id="textColors"></div>
         <div id="labelColorRow" class="panel" style="gap:8px">
-          <span class="lbl">Warna label</span>
+          <span class="lbl" id="accentLabel">Warna label</span>
           <div class="swatches" id="labelColors"></div>
         </div>
         <div class="slider">
           <label for="textSize">Ukuran teks</label><output id="textSizeOut"></output>
           <input type="range" id="textSize" min="2" max="25" step="0.5">
+        </div>
+        <div class="slider">
+          <label for="textSpacing">Jarak huruf</label><output id="textSpacingOut"></output>
+          <input type="range" id="textSpacing" min="-5" max="50" step="1">
         </div>
         <div class="slider">
           <label for="textRot">Kemiringan</label><output id="textRotOut"></output>
@@ -316,20 +331,38 @@ const ADJ = [
   ["saturation", "Saturasi", -100, 100], ["vibrance", "Warna hidup", -100, 100],
   ["warmth", "Kehangatan", -100, 100], ["tint", "Hijau / magenta", -100, 100],
   ["sharpness", "Ketajaman", 0, 100], ["vignette", "Vignet (tepi gelap)", 0, 100],
-  ["fade", "Matte (pudar)", 0, 100],
+  ["fade", "Matte (pudar)", 0, 100], ["grain", "Butiran film", 0, 100],
 ];
 const zeroAdj = () => Object.fromEntries(ADJ.map(a => [a[0], 0]));
+// [id, nama, kategori, pengaturan]; split = pewarnaan area gelap (s) & terang (h), grain = butiran film
 const FILTERS = [
-  ["none", "Asli", {}],
-  ["menu", "Menu Segar", { vibrance: .45, saturation: .1, contrast: .16, sharpness: .45, shadows: .12, warmth: .08 }],
-  ["espresso", "Espresso", { contrast: .28, warmth: .22, saturation: .06, shadows: -.12, highlights: -.08, vignette: .4, sharpness: .2 }],
-  ["latte", "Latte", { exposure: .1, contrast: -.14, warmth: .2, saturation: -.12, fade: .4, highlights: -.12 }],
-  ["golden", "Senja", { warmth: .45, exposure: .05, saturation: .12, vibrance: .2, contrast: .1, tint: .05, vignette: .15 }],
-  ["pagi", "Pagi Cerah", { exposure: .15, contrast: .1, vibrance: .35, warmth: -.06, highlights: -.18, shadows: .18 }],
-  ["matcha", "Matcha", { tint: -.22, warmth: -.04, saturation: .08, exposure: .06, fade: .18, contrast: -.04 }],
-  ["vintage", "Vintage", { fade: .55, warmth: .25, saturation: -.28, contrast: -.04, vignette: .3, tint: .06 }],
-  ["robusta", "Robusta Mono", { saturation: -1, contrast: .32, fade: .1, vignette: .3, sharpness: .25 }],
+  ["none", "Asli", "all", {}],
+  ["menu", "Menu Segar", "kopi", { vibrance: .45, saturation: .1, contrast: .16, sharpness: .45, shadows: .12, warmth: .08 }],
+  ["espresso", "Espresso", "kopi", { contrast: .28, warmth: .22, saturation: .06, shadows: -.12, highlights: -.08, vignette: .4, sharpness: .2 }],
+  ["latte", "Latte", "kopi", { exposure: .1, contrast: -.14, warmth: .2, saturation: -.12, fade: .4, highlights: -.12 }],
+  ["mocha", "Mocha", "kopi", { contrast: .2, warmth: .3, saturation: -.05, shadows: -.05, vignette: .25, split: { s: [.06, .02, -.04], h: [.05, .03, 0] } }],
+  ["karamel", "Karamel", "kopi", { exposure: .06, warmth: .35, vibrance: .25, contrast: .08, fade: .12, split: { h: [.08, .05, -.02] } }],
+  ["cokelat", "Cokelat Pekat", "kopi", { contrast: .38, exposure: -.08, warmth: .18, saturation: .12, highlights: -.2, vignette: .45, sharpness: .3 }],
+  ["eskopi", "Es Kopi Susu", "kopi", { exposure: .14, contrast: .06, warmth: -.1, vibrance: .2, highlights: -.15, shadows: .15, split: { s: [-.02, .01, .05] } }],
+  ["dessert", "Dessert", "kopi", { exposure: .12, vibrance: .4, saturation: .1, tint: .06, contrast: .05, shadows: .1, sharpness: .25 }],
+  ["senja", "Senja", "suasana", { warmth: .45, exposure: .05, saturation: .12, vibrance: .2, contrast: .1, tint: .05, vignette: .15 }],
+  ["pagi", "Pagi Cerah", "suasana", { exposure: .15, contrast: .1, vibrance: .35, warmth: -.06, highlights: -.18, shadows: .18 }],
+  ["lampu", "Lampu Kafe", "suasana", { warmth: .4, exposure: .04, contrast: .12, shadows: .1, vignette: .3, fade: .08, split: { h: [.08, .04, -.04] } }],
+  ["hujan", "Hujan Sore", "suasana", { warmth: -.25, saturation: -.25, contrast: .08, fade: .2, exposure: -.04, split: { s: [-.03, .01, .06] } }],
+  ["malam", "Malam", "suasana", { exposure: -.1, contrast: .25, saturation: -.1, vignette: .45, split: { s: [-.05, .02, .07], h: [.06, .03, -.02] } }],
+  ["tropis", "Tropis", "suasana", { vibrance: .55, saturation: .15, tint: -.08, exposure: .08, contrast: .12, warmth: .05 }],
+  ["matcha", "Matcha", "gaya", { tint: -.22, warmth: -.04, saturation: .08, exposure: .06, fade: .18, contrast: -.04 }],
+  ["pastel", "Pastel", "gaya", { exposure: .16, contrast: -.22, saturation: -.15, fade: .35, tint: .06, highlights: -.1 }],
+  ["sinema", "Sinematik", "gaya", { contrast: .22, saturation: -.08, vignette: .3, split: { s: [-.06, .02, .08], h: [.08, .03, -.06] } }],
+  ["film", "Film 35mm", "gaya", { fade: .3, warmth: .12, contrast: .1, saturation: -.1, grain: .55, split: { s: [0, .02, .04] } }],
+  ["retro", "Retro 70an", "gaya", { fade: .4, warmth: .35, saturation: -.15, tint: .08, grain: .35, vignette: .25, split: { h: [.08, .05, -.04] } }],
+  ["vintage", "Vintage", "gaya", { fade: .55, warmth: .25, saturation: -.28, contrast: -.04, vignette: .3, tint: .06 }],
+  ["pop", "Kontras Pop", "gaya", { contrast: .45, vibrance: .4, sharpness: .4, shadows: -.05, highlights: -.1 }],
+  ["sepia", "Sepia", "mono", { saturation: -1, contrast: .1, fade: .15, split: { s: [.09, .04, -.03], h: [.1, .06, 0] } }],
+  ["robusta", "Robusta Mono", "mono", { saturation: -1, contrast: .32, fade: .1, vignette: .3, sharpness: .25 }],
+  ["noir", "Noir", "mono", { saturation: -1, contrast: .6, exposure: -.05, vignette: .5, grain: .3, sharpness: .3 }],
 ];
+const FILTER_CATS = [["all", "Semua"], ["kopi", "Kopi & Makanan"], ["suasana", "Suasana"], ["gaya", "Gaya"], ["mono", "Hitam Putih"]];
 const FORMATS = [
   ["orig", "Asli", "sesuai file", 0],
   ["1:1", "1:1", "Feed kotak", 1],
@@ -337,20 +370,51 @@ const FORMATS = [
   ["9:16", "9:16", "Story, Reels, TikTok", 9 / 16],
   ["16:9", "16:9", "YouTube, layar lebar", 16 / 9],
 ];
-const PALETTE = ["#ffffff", "#f3f6e9", "#1d6b45", "#f2b705", "#c8501e", "#5a3a22", "#13211a"];
+const PALETTE = ["#ffffff", "#f3f6e9", "#e8d5b5", "#1d6b45", "#5ccf8e", "#f2b705", "#c8501e", "#e85d75", "#3d8bfd", "#8a5a34", "#5a3a22", "#13211a"];
+// key: [nama, font-family, ketebalan, kategori, gaya miring?]
 const FONTS = {
-  sans: ["Tegas", '"Plus Jakarta Sans", "Segoe UI", sans-serif', 800],
-  serif: ["Elegan", '"Fraunces", Georgia, serif', 800],
-  hand: ["Tulisan tangan", '"Caveat", "Segoe Script", cursive', 700],
+  sans: ["Jakarta", '"Plus Jakarta Sans", "Segoe UI", sans-serif', 800, "tegas"],
+  montserrat: ["Montserrat", '"Montserrat", sans-serif', 900, "tegas"],
+  poppins: ["Poppins", '"Poppins", sans-serif', 800, "tegas"],
+  bebas: ["BEBAS NEUE", '"Bebas Neue", Impact, sans-serif', 400, "tegas"],
+  anton: ["ANTON", '"Anton", Impact, sans-serif', 400, "tegas"],
+  oswald: ["Oswald", '"Oswald", sans-serif', 700, "tegas"],
+  archivo: ["Archivo Black", '"Archivo Black", sans-serif', 400, "tegas"],
+  serif: ["Fraunces", '"Fraunces", Georgia, serif', 800, "elegan"],
+  playfair: ["Playfair", '"Playfair Display", Georgia, serif', 800, "elegan"],
+  playfairi: ["Playfair Miring", '"Playfair Display", Georgia, serif', 700, "elegan", true],
+  dmserif: ["DM Serif", '"DM Serif Display", Georgia, serif', 400, "elegan"],
+  cormorant: ["Cormorant", '"Cormorant Garamond", Georgia, serif', 700, "elegan", true],
+  abril: ["Abril Fatface", '"Abril Fatface", Georgia, serif', 400, "elegan"],
+  hand: ["Caveat", '"Caveat", "Segoe Script", cursive', 700, "tangan"],
+  pacifico: ["Pacifico", '"Pacifico", cursive', 400, "tangan"],
+  dancing: ["Dancing Script", '"Dancing Script", cursive', 700, "tangan"],
+  kaushan: ["Kaushan", '"Kaushan Script", cursive', 400, "tangan"],
+  satisfy: ["Satisfy", '"Satisfy", cursive', 400, "tangan"],
+  marker: ["Spidol", '"Permanent Marker", cursive', 400, "tangan"],
+  amatic: ["PAPAN KAPUR", '"Amatic SC", cursive', 700, "tangan"],
+  lobster: ["Lobster", '"Lobster", cursive', 400, "unik"],
+  righteous: ["Righteous", '"Righteous", sans-serif', 400, "unik"],
+  bungee: ["Bungee", '"Bungee", sans-serif', 400, "unik"],
+  fredoka: ["Fredoka", '"Fredoka", sans-serif', 700, "unik"],
+  shrikhand: ["Shrikhand", '"Shrikhand", serif', 400, "unik"],
+  monoton: ["Monoton", '"Monoton", sans-serif', 400, "unik"],
 };
-const TEXT_STYLES = [["plain", "Polos"], ["label", "Label"], ["outline", "Garis"]];
+const FONT_CATS = [["tegas", "Tegas"], ["elegan", "Elegan"], ["tangan", "Tulisan tangan"], ["unik", "Unik"]];
+const SCRIPT_FONTS = ["hand", "pacifico", "dancing", "kaushan", "satisfy", "amatic"];
+const TEXT_STYLES = [["plain", "Polos"], ["label", "Label"], ["outline", "Garis tepi"], ["neon", "Neon"], ["3d", "Timbul 3D"], ["highlight", "Stabilo"], ["box", "Bingkai"], ["ribbon", "Pita"]];
+const ACCENT_STYLES = { label: "Warna label", "3d": "Warna bayangan", highlight: "Warna stabilo", box: "Warna bingkai", ribbon: "Warna pita" };
 const TEMPLATES = [
   ["MENU BARU", { style: "label", bg: "#f2b705", color: "#13211a", font: "sans", size: .07 }],
-  ["PROMO HARI INI", { style: "label", bg: "#c8501e", color: "#ffffff", font: "sans", size: .065 }],
+  ["PROMO HARI INI", { style: "ribbon", bg: "#c8501e", color: "#ffffff", font: "anton", size: .075, spacing: .04 }],
   ["Rp 18.000", { style: "label", bg: "#1d6b45", color: "#ffffff", font: "sans", size: .075 }],
-  ["Batang Garing Coffee", { style: "plain", color: "#ffffff", font: "hand", size: .1 }],
+  ["Batang Garing Coffee", { style: "plain", color: "#ffffff", font: "pacifico", size: .085 }],
   ["Buka 08.00 – 22.00", { style: "plain", color: "#ffffff", font: "sans", size: .045 }],
-  ["Teks bebas", { style: "plain", color: "#ffffff", font: "serif", size: .07 }],
+  ["BELI 2 GRATIS 1", { style: "3d", bg: "#c8501e", color: "#f2b705", font: "bungee", size: .07 }],
+  ["Ngopi dulu", { style: "neon", color: "#f2b705", font: "kaushan", size: .1 }],
+  ["Menu Hari Ini", { style: "plain", color: "#ffffff", font: "amatic", size: .12, spacing: .04 }],
+  ["NEW", { style: "box", bg: "#ffffff", color: "#ffffff", font: "bebas", size: .09, spacing: .15 }],
+  ["Teks bebas", { style: "plain", color: "#ffffff", font: "playfair", size: .07 }],
 ];
 
 /* ---------------- state ---------------- */
@@ -377,7 +441,8 @@ varying vec2 v_uv;
 uniform sampler2D u_tex;
 uniform vec2 u_frame, u_media, u_pan;
 uniform float u_scale, u_exposure, u_contrast, u_highlights, u_shadows, u_saturation, u_vibrance,
-              u_warmth, u_tint, u_sharp, u_vignette, u_fade;
+              u_warmth, u_tint, u_sharp, u_vignette, u_fade, u_grain, u_seed;
+uniform vec3 u_splitS, u_splitH;
 const vec3 W = vec3(0.2126, 0.7152, 0.0722);
 void main() {
   vec2 p = v_uv * u_frame;
@@ -400,11 +465,17 @@ void main() {
   float s = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
   c = mix(vec3(l), c, 1.0 + u_vibrance * (1.0 - s) * 0.9);
   c = mix(vec3(l), c, 1.0 + u_saturation);
-  c += vec3(u_warmth * 0.09, -u_tint * 0.06, -u_warmth * 0.09);
+  c += vec3(u_warmth * 0.13, -u_tint * 0.08 + u_warmth * 0.02, -u_warmth * 0.13);
+  l = clamp(dot(c, W), 0.0, 1.0);
+  c += u_splitS * (1.0 - smoothstep(0.0, 0.6, l)) + u_splitH * smoothstep(0.4, 1.0, l);
   c = c * (1.0 - u_fade * 0.2) + u_fade * 0.1;
   vec2 q = v_uv - 0.5; float ar = u_frame.x / u_frame.y; q.x *= ar;
   float r = length(q) / length(vec2(0.5 * ar, 0.5));
   c *= 1.0 - u_vignette * 0.7 * smoothstep(0.35, 1.05, r);
+  if (u_grain > 0.0) {
+    float n = fract(sin(dot(gl_FragCoord.xy + u_seed, vec2(12.9898, 78.233))) * 43758.5453);
+    c += (n - 0.5) * u_grain * 0.16;
+  }
   gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 const VS = `attribute vec2 a; varying vec2 v_uv; void main(){ v_uv = a; gl_Position = vec4(a.x*2.0-1.0, 1.0-a.y*2.0, 0.0, 1.0); }`;
@@ -417,7 +488,7 @@ function initGL() {
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
   const loc = gl.getAttribLocation(prog, "a"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  ["u_tex", "u_frame", "u_media", "u_pan", "u_scale", ...ADJ.map(a => "u_" + (a[0] === "sharpness" ? "sharp" : a[0]))].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+  ["u_tex", "u_frame", "u_media", "u_pan", "u_scale", "u_splitS", "u_splitH", "u_seed", ...ADJ.map(a => "u_" + (a[0] === "sharpness" ? "sharp" : a[0]))].forEach(n => U[n] = gl.getUniformLocation(prog, n));
   tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
   [[gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR]]
     .forEach(([k, v]) => gl.texParameteri(gl.TEXTURE_2D, k, v));
@@ -435,9 +506,13 @@ function upload(el, force) {
 
 function params(original) {
   const p = zeroAdj();
+  p.splitS = [0, 0, 0]; p.splitH = [0, 0, 0];
   if (original) return p;
-  const f = (FILTERS.find(x => x[0] === S.filter) || FILTERS[0])[2];
+  const f = (FILTERS.find(x => x[0] === S.filter) || FILTERS[0])[3];
+  const sp = f.split || {}, k2 = S.filterStrength;
+  p.splitS = (sp.s || [0, 0, 0]).map(v => v * k2); p.splitH = (sp.h || [0, 0, 0]).map(v => v * k2);
   for (const k in p) {
+    if (k === "splitS" || k === "splitH") continue;
     p[k] = S.manual[k] + (S.autoOn ? S.auto[k] * S.autoStrength : 0) + (f[k] || 0) * S.filterStrength;
     p[k] = clamp(p[k], k === "saturation" ? -1 : -1.5, 1.5);
   }
@@ -486,6 +561,8 @@ function drawBase(ctx, W, H, opts) {
     gl.uniform2f(U.u_frame, W, H); gl.uniform2f(U.u_media, m.w, m.h); gl.uniform2f(U.u_pan, g.panX, g.panY);
     gl.uniform1f(U.u_scale, g.scale);
     for (const [k] of ADJ) gl.uniform1f(U["u_" + (k === "sharpness" ? "sharp" : k)], p[k]);
+    gl.uniform3fv(U.u_splitS, p.splitS); gl.uniform3fv(U.u_splitH, p.splitH);
+    gl.uniform1f(U.u_seed, m.kind === "video" ? (m.el.currentTime * 997) % 1000 : 0);
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     ctx.drawImage(glCanvas, 0, 0);
@@ -498,39 +575,63 @@ function drawBase(ctx, W, H, opts) {
   }
 }
 
-function fontOf(t, px) { const f = FONTS[t.font] || FONTS.sans; return `${f[2]} ${px}px ${f[1]}`; }
+function fontOf(t, px) { const f = FONTS[t.font] || FONTS.sans; return `${f[4] ? "italic " : ""}${f[2]} ${px}px ${f[1]}`; }
+function setSpacing(ctx, t, px) { if ("letterSpacing" in ctx) ctx.letterSpacing = ((t.spacing || 0) * px).toFixed(2) + "px"; }
 function textBox(ctx, t, W) {
   const px = t.size * W;
-  ctx.font = fontOf(t, px);
+  ctx.font = fontOf(t, px); setSpacing(ctx, t, px);
   const lines = t.text.split("\n");
-  const lh = px * (t.font === "hand" ? 1.0 : 1.12);
+  const lh = px * (SCRIPT_FONTS.includes(t.font) ? 1.05 : t.font === "bebas" || t.font === "anton" ? 1.0 : 1.15);
   const tw = Math.max(1, ...lines.map(l => ctx.measureText(l).width));
-  const padX = t.style === "label" ? px * .5 : px * .1, padY = t.style === "label" ? px * .28 : px * .05;
-  return { px, lines, lh, w: tw + padX * 2, h: lh * lines.length + padY * 2, padY };
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+  const boxed = { label: [.5, .28], box: [.45, .3], ribbon: [.9, .3], highlight: [.25, .08] }[t.style] || [.12, .06];
+  const padX = px * boxed[0], padY = px * boxed[1];
+  return { px, lines, lh, w: tw + padX * 2, h: lh * lines.length + padY * 2, padY, padX, tw };
 }
 function drawText(ctx, t, W, H, selected) {
-  const b = textBox(ctx, t, W);
+  const b = textBox(ctx, t, W), px = b.px;
   ctx.save();
   ctx.translate(t.x * W, t.y * H); ctx.rotate(t.rot * Math.PI / 180);
-  if (t.style === "label") {
+  const rr = (x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
+  if (t.style === "label") { ctx.fillStyle = t.bg; rr(-b.w / 2, -b.h / 2, b.w, b.h, px * .28); ctx.fill(); }
+  if (t.style === "box") { ctx.strokeStyle = t.bg; ctx.lineWidth = Math.max(2, px * .07); rr(-b.w / 2, -b.h / 2, b.w, b.h, px * .08); ctx.stroke(); }
+  if (t.style === "ribbon") {
+    const w = b.w / 2, h = b.h / 2, n = px * .45;
     ctx.fillStyle = t.bg; ctx.beginPath();
-    const r = b.px * .28;
-    if (ctx.roundRect) ctx.roundRect(-b.w / 2, -b.h / 2, b.w, b.h, r); else ctx.rect(-b.w / 2, -b.h / 2, b.w, b.h);
-    ctx.fill();
+    ctx.moveTo(-w, -h); ctx.lineTo(w, -h); ctx.lineTo(w - n, 0); ctx.lineTo(w, h); ctx.lineTo(-w, h); ctx.lineTo(-w + n, 0); ctx.closePath(); ctx.fill();
   }
-  ctx.font = fontOf(t, b.px); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = fontOf(t, px); ctx.textAlign = "center"; ctx.textBaseline = "middle"; setSpacing(ctx, t, px);
   b.lines.forEach((line, i) => {
     const y = -b.h / 2 + b.padY + b.lh * (i + .5);
-    if (t.style === "outline") {
-      ctx.lineJoin = "round"; ctx.lineWidth = b.px * .14;
-      ctx.strokeStyle = isLight(t.color) ? "#13211a" : "#ffffff"; ctx.strokeText(line, 0, y);
-    } else if (t.style === "plain") {
-      ctx.shadowColor = isLight(t.color) ? "rgba(0,0,0,.55)" : "rgba(255,255,255,.5)";
-      ctx.shadowBlur = b.px * .18; ctx.shadowOffsetY = b.px * .04;
+    // canvas menambah jarak huruf di kanan; geser setengahnya supaya tetap di tengah
+    const x = ("letterSpacing" in ctx) ? ((t.spacing || 0) * px) / 2 : 0;
+    if (t.style === "highlight") {
+      const lw = ctx.measureText(line).width;
+      ctx.fillStyle = t.bg; ctx.globalAlpha = .9;
+      ctx.fillRect(-lw / 2 - b.padX + x, y - b.lh * .32, lw + b.padX * 2, b.lh * .62); ctx.globalAlpha = 1;
     }
-    ctx.fillStyle = t.color; ctx.fillText(line, 0, y);
-    ctx.shadowColor = "transparent";
+    if (t.style === "outline") {
+      ctx.lineJoin = "round"; ctx.lineWidth = px * .14;
+      ctx.strokeStyle = isLight(t.color) ? "#13211a" : "#ffffff"; ctx.strokeText(line, x, y);
+    } else if (t.style === "plain" || t.style === "box") {
+      ctx.shadowColor = isLight(t.color) ? "rgba(0,0,0,.55)" : "rgba(255,255,255,.5)";
+      ctx.shadowBlur = px * .18; ctx.shadowOffsetY = px * .04;
+    } else if (t.style === "3d") {
+      const d = Math.max(2, px * .06);
+      ctx.fillStyle = t.bg;
+      for (let k = 4; k >= 1; k--) ctx.fillText(line, x + d * k / 4 * 1.2, y + d * k / 4 * 1.2);
+      ctx.shadowColor = "rgba(0,0,0,.35)"; ctx.shadowBlur = px * .1;
+    } else if (t.style === "neon") {
+      ctx.shadowColor = t.color; ctx.shadowBlur = px * .45;
+      ctx.fillStyle = t.color; ctx.fillText(line, x, y); ctx.fillText(line, x, y);
+      ctx.shadowBlur = px * .12;
+    }
+    ctx.fillStyle = t.style === "neon" ? "#ffffff" : t.color;
+    if (t.style === "neon") { ctx.globalAlpha = .85; }
+    ctx.fillText(line, x, y);
+    ctx.globalAlpha = 1; ctx.shadowColor = "transparent";
   });
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
   if (selected) outline(ctx, b.w, b.h, W);
   ctx.restore();
   return b;
@@ -732,15 +833,22 @@ bindSlider("autoStrength", () => S.autoStrength * 100, v => { S.autoStrength = v
 /* ---------------- Filter ---------------- */
 let thumbsDirty = true;
 const thumbCanvases = {};
+let filterCat = "all";
 function buildFilters() {
   const box = $("filters"); box.innerHTML = "";
-  FILTERS.forEach(([id, name]) => {
+  FILTERS.forEach(([id, name, cat]) => {
     const b = document.createElement("button"); b.className = "fcard"; b.setAttribute("aria-pressed", S.filter === id);
+    b.dataset.cat = cat;
     const c = document.createElement("canvas"); c.width = c.height = 156; thumbCanvases[id] = c;
     b.append(c, document.createTextNode(name));
     b.onclick = () => { S.filter = id; [...box.children].forEach((x, i) => x.setAttribute("aria-pressed", FILTERS[i][0] === id)); draw(); };
     box.appendChild(b);
   });
+  choiceButtons($("filterCats"), FILTER_CATS.map(([v, n]) => ({ value: v, html: n })), v => filterCat === v, v => {
+    filterCat = v;
+    [...box.children].forEach((x, i) => x.hidden = !(v === "all" || FILTERS[i][2] === v || FILTERS[i][0] === "none"));
+    box.scrollLeft = 0;
+  }, "cat");
 }
 function renderThumbs() {
   if (!thumbsDirty || !S.media || $("filters").offsetParent === null) return;
@@ -784,7 +892,7 @@ function buildSize() {
 /* ---------------- Teks ---------------- */
 function addText(text, o) {
   const t = { id: uid++, text, x: .5, y: .2 + (S.texts.length % 4) * .18, rot: 0, style: "plain", color: "#ffffff", bg: "#1d6b45", font: "sans", size: .07, ...o };
-  S.texts.push(t); select(t.id); showTab("text");
+  S.texts.push(t); select(t.id); showTab("text"); ensureFont(t).then(draw);
   if (text === "Teks bebas") { $("textValue").select(); }
   draw();
 }
@@ -795,28 +903,44 @@ function select(id, fromStage) {
   if (t) {
     $("textValue").value = t.text;
     syncSelected();
-    choiceButtons($("textStyles"), TEXT_STYLES.map(s => ({ value: s[0], html: s[1] })), v => t.style === v, v => { t.style = v; $("labelColorRow").hidden = v !== "label"; draw(); });
-    choiceButtons($("textFonts"), Object.entries(FONTS).map(([k, f]) => ({ value: k, html: `<span style="font-family:${f[1].replace(/"/g, "'")};font-weight:${f[2]}">${f[0]}</span>` })), v => t.font === v, v => { t.font = v; draw(); });
+    const accent = () => { $("labelColorRow").hidden = !ACCENT_STYLES[t.style]; $("accentLabel").textContent = ACCENT_STYLES[t.style] || ""; };
+    choiceButtons($("textStyles"), TEXT_STYLES.map(s => ({ value: s[0], html: s[1] })), v => t.style === v, v => {
+      t.style = v;
+      if (v === "highlight" && t.bg === "#1d6b45" && t.color === "#ffffff") { t.bg = "#f2b705"; t.color = "#13211a"; swatches($("textColors"), c => t.color === c, c => { t.color = c; draw(); }); swatches($("labelColors"), c => t.bg === c, c => { t.bg = c; draw(); }); }
+      accent(); draw();
+    });
+    fontCat = (FONTS[t.font] || FONTS.sans)[3];
+    const showFonts = () => choiceButtons($("textFonts"), Object.entries(FONTS).filter(([, f]) => f[3] === fontCat).map(([k, f]) => ({
+      value: k, html: `<span style="font-family:${f[1].replace(/"/g, "'")};font-weight:${f[2]};${f[4] ? "font-style:italic" : ""}">${f[0]}</span>` })),
+      v => t.font === v, v => { t.font = v; ensureFont(t).then(draw); draw(); });
+    choiceButtons($("fontCats"), FONT_CATS.map(([v, n]) => ({ value: v, html: n })), v => fontCat === v, v => { fontCat = v; showFonts(); $("textFonts").scrollLeft = 0; }, "cat");
+    showFonts();
     swatches($("textColors"), v => t.color === v, v => { t.color = v; draw(); });
     swatches($("labelColors"), v => t.bg === v, v => { t.bg = v; draw(); });
-    $("labelColorRow").hidden = t.style !== "label";
+    accent();
     if (fromStage) showTab("text");
   } else if (id === "logo" && fromStage) showTab("logo");
   draw();
 }
-let syncTextSize = () => {}, syncTextRot = () => {}, syncLogo = [];
+let syncTextSize = () => {}, syncTextRot = () => {}, syncTextSpacing = () => {}, syncLogo = [], fontCat = "tegas";
+// pastikan huruf sudah dimuat sebelum digambar ke kanvas (kanvas tidak menunggu sendiri)
+function ensureFont(t) {
+  if (!document.fonts || !document.fonts.load) return Promise.resolve();
+  return document.fonts.load(fontOf(t, 40), t.text || "A").catch(() => {});
+}
 function syncSelected() {
   const t = S.texts.find(x => x.id === S.selected);
-  if (t) { syncTextSize(); syncTextRot(); }
+  if (t) { syncTextSize(); syncTextRot(); syncTextSpacing(); }
   if (S.selected === "logo") syncLogo.forEach(f => f());
 }
 function buildText() {
-  choiceButtons($("textTemplates"), TEMPLATES.map(([txt]) => ({ value: txt, html: txt })), () => false, v => addText(v, TEMPLATES.find(x => x[0] === v)[1]));
+  choiceButtons($("textTemplates"), TEMPLATES.map(([txt, o]) => { const f = FONTS[o.font]; return { value: txt, html: `<span style="font-family:${f[1].replace(/"/g, "'")};font-weight:${f[2]};font-size:15px">${txt}</span>` }; }), () => false, v => addText(v, TEMPLATES.find(x => x[0] === v)[1]));
   $("textValue").addEventListener("input", e => { const t = selObj(); if (t && t !== S.logo) { t.text = e.target.value || " "; draw(); } });
   $("deleteText").onclick = () => { S.texts = S.texts.filter(t => t.id !== S.selected); select(null); };
   const cur = () => S.texts.find(x => x.id === S.selected) || { size: .07, rot: 0 };
   syncTextSize = bindSlider("textSize", () => cur().size * 100, v => cur().size = v / 100, v => v.toFixed(1));
   syncTextRot = bindSlider("textRot", () => cur().rot, v => cur().rot = v, v => Math.round(v) + "°");
+  syncTextSpacing = bindSlider("textSpacing", () => (cur().spacing || 0) * 100, v => cur().spacing = v / 100, v => Math.round(v));
 }
 
 /* ---------------- Logo ---------------- */
